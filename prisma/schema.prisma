@@ -1,0 +1,154 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(uuid())
+  firstName        String    @map("first_name")
+  lastName         String    @map("last_name")
+  email            String    @unique
+  profilePhotoUrl  String?   @map("profile_photo_url")
+  isSplitBot       Boolean   @default(false) @map("is_split_bot")
+  role             UserRole  @default(USER)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relationships
+  messagesAsGuest      Message[]  @relation("GuestMessages")
+  messagesAsHost       Message[]  @relation("HostMessages")
+  messagesAsOriginator Message[]  @relation("OriginatorMessages")
+  auditLogs            AuditLog[]
+  listings             Listing[]  @relation("HostListings")
+
+  @@map("users")
+}
+
+enum UserRole {
+  USER
+  SUPPORT_STAFF
+  ADMIN
+}
+
+model Listing {
+  id          String   @id @default(uuid())
+  name        String
+  hostId      String   @map("host_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relationships
+  host        User     @relation("HostListings", fields: [hostId], references: [id])
+  threads     Thread[]
+
+  @@map("listings")
+}
+
+model Thread {
+  id         String    @id @default(uuid())
+  listingId  String    @map("listing_id")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  // Relationships
+  listing    Listing   @relation(fields: [listingId], references: [id])
+  messages   Message[]
+  proposals  Proposal[]
+
+  @@map("threads")
+}
+
+model Message {
+  id              String    @id @default(uuid())
+  messageBody     String    @map("message_body") @db.Text
+  splitBotWarning String?   @map("split_bot_warning") @db.Text
+  guestUserId     String    @map("guest_user_id")
+  hostUserId      String    @map("host_user_id")
+  originatorUserId String   @map("originator_user_id")
+  threadId        String    @map("thread_id")
+  forwarded       Boolean   @default(false)
+  forwardedAt     DateTime? @map("forwarded_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  // Relationships
+  guestUser      User   @relation("GuestMessages", fields: [guestUserId], references: [id])
+  hostUser       User   @relation("HostMessages", fields: [hostUserId], references: [id])
+  originatorUser User   @relation("OriginatorMessages", fields: [originatorUserId], references: [id])
+  thread         Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@index([guestUserId])
+  @@index([hostUserId])
+  @@index([deletedAt])
+  @@map("messages")
+}
+
+model Proposal {
+  id                    String    @id @default(uuid())
+  threadId              String?   @map("thread_id")
+  leaseDocumentsSigned  Boolean   @default(false) @map("lease_documents_signed")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  // Relationships
+  thread Thread? @relation(fields: [threadId], references: [id])
+
+  @@map("proposals")
+}
+
+model AuditLog {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  action      AuditAction
+  entityType  String       @map("entity_type")
+  entityId    String       @map("entity_id")
+  metadata    Json?
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  // Relationships
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+enum AuditAction {
+  MESSAGE_CREATED
+  MESSAGE_DELETED
+  MESSAGE_FORWARDED
+  THREAD_DELETED
+  PROPOSAL_UPDATED
+  LEASE_DOCUMENTS_SIGNED
+}
+
+model SplitBotTemplate {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  template    String   @db.Text
+  category    TemplateCategory
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("split_bot_templates")
+}
+
+enum TemplateCategory {
+  REDACTED_CONTACT_INFO
+  LIMIT_MESSAGES
+  LEASE_DOCUMENTS_SIGNED
+  CUSTOM
+}
