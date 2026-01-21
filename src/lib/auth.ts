@@ -1,5 +1,6 @@
 import { NextAuthOptions } from 'next-auth';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
+import CredentialsProvider from 'next-auth/providers/credentials';
 import { prisma } from './prisma';
 
 export const authOptions: NextAuthOptions = {
@@ -10,6 +11,42 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: '/login',
   },
+  providers: [
+    CredentialsProvider({
+      name: 'Credentials',
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        // This is a placeholder - in production, verify credentials against database
+        if (!credentials?.email || !credentials?.password) {
+          return null;
+        }
+
+        try {
+          const user = await prisma.user.findFirst({
+            where: { email: credentials.email },
+          });
+
+          if (!user) {
+            return null;
+          }
+
+          // In production, verify password hash here
+          return {
+            id: user.id,
+            email: user.email,
+            name: `${user.firstName} ${user.lastName}`,
+            role: user.role,
+          };
+        } catch (error) {
+          console.error('Auth error:', error);
+          return null;
+        }
+      }
+    })
+  ],
   callbacks: {
     async session({ token, session }) {
       if (token) {
@@ -21,26 +58,34 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async jwt({ token, user }) {
-      const dbUser = await prisma.user.findFirst({
-        where: {
-          email: token.email!,
-        },
-      });
-
-      if (!dbUser) {
-        if (user) {
-          token.id = user.id;
-        }
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
         return token;
       }
 
-      return {
-        id: dbUser.id,
-        name: `${dbUser.firstName} ${dbUser.lastName}`,
-        email: dbUser.email,
-        role: dbUser.role,
-        picture: dbUser.profilePhotoUrl,
-      };
+      try {
+        const dbUser = await prisma.user.findFirst({
+          where: {
+            email: token.email!,
+          },
+        });
+
+        if (!dbUser) {
+          return token;
+        }
+
+        return {
+          id: dbUser.id,
+          name: `${dbUser.firstName} ${dbUser.lastName}`,
+          email: dbUser.email,
+          role: dbUser.role,
+          picture: dbUser.profilePhotoUrl,
+        };
+      } catch (error) {
+        console.error('JWT callback error:', error);
+        return token;
+      }
     },
   },
 };

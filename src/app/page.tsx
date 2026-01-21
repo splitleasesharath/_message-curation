@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 
 export default function Home() {
-  redirect('/message-curation');
+  // Redirect to demo page for local preview
+  redirect('/demo');
 }
